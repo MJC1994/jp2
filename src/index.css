@@ -1067,6 +1067,7 @@ button:focus-visible {
   box-shadow: inset 0 0 0 2px #e50000;
 }
 
+.picker-field-block,
 .picker-destination {
   width: 360px;
   display: flex;

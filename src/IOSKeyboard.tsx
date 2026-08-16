@@ -29,7 +29,6 @@ export function IOSKeyboard({
   return (
     <div
       className={`ios-keyboard${open ? " ios-keyboard-open" : ""}`}
-      inert
       aria-hidden="true"
     >
       <div className="ios-keyboard-rows">
@@ -82,8 +81,12 @@ export function IOSKeyboard({
           <button
             type="button"
             className="ios-key ios-key-search"
+            tabIndex={-1}
             onMouseDown={(event) => event.preventDefault()}
-            onClick={onSearch}
+            onPointerDown={(event) => {
+              event.preventDefault();
+              onSearch();
+            }}
           >
             search
           </button>
@@ -112,6 +115,7 @@ function KeyButton({
       type="button"
       className={`ios-key ${className}`.trim()}
       aria-label={ariaLabel ?? label}
+      tabIndex={-1}
       onMouseDown={(event) => event.preventDefault()}
       onClick={onPress}
     >

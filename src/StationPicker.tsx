@@ -140,6 +140,9 @@ function stationsMatch(a: string, b: string) {
   return left.length > 0 && left === right;
 }
 
+const EMPTY_ORIGIN_ERROR = "please enter your origin station";
+const EMPTY_DESTINATION_ERROR = "please enter your destination station";
+
 export function StationPicker({
   open,
   activeField,
@@ -165,6 +168,8 @@ export function StationPicker({
   const [toQuery, setToQuery] = useState(activeField === "to" ? "" : toStation);
   const [viaQuery, setViaQuery] = useState(isViaPicker ? viaStation : "");
   const [viaModeDraft, setViaModeDraft] = useState<ViaMode>(viaMode);
+  const [fromError, setFromError] = useState("");
+  const [toError, setToError] = useState("");
   const [isEditing, setIsEditing] = useState(false);
   const [keyboardOpen, setKeyboardOpen] = useState(true);
   const [savedKind, setSavedKind] = useState<"home" | "work" | null>(null);
@@ -268,8 +273,10 @@ export function StationPicker({
     setIsEditing(true);
     if (field === "from") {
       setFromQuery(value);
+      setFromError("");
     } else if (field === "to") {
       setToQuery(value);
+      setToError("");
     } else {
       setViaQuery(value);
     }
@@ -409,34 +416,77 @@ export function StationPicker({
     updateQuery(focusedField, current.slice(0, -1));
   }
 
-  function confirmSearch() {
-    const topResult = isSearching && results[0] ? results[0].station : null;
+  function topSearchStation(): StationChoice | null {
+    if (!isSearching || !results[0]) {
+      return null;
+    }
+    return {
+      name: results[0].station.name,
+      code: results[0].station.crs ?? "",
+    };
+  }
 
-    if (topResult) {
-      const station = {
-        name: topResult.name,
-        code: topResult.crs ?? "",
-      };
-      if (isViaPicker) {
-        applyVia(station);
-      } else if (focusedField === "from") {
-        applyFrom(station);
-      } else {
-        applyTo(station);
-      }
+  function applyOriginFromReturn(station: StationChoice) {
+    setFromQuery(station.name);
+    setFromError("");
+    onSelectFrom(station);
+    focusField("to", toQuery.trim().length > 0);
+  }
+
+  function applyDestinationFromReturn(station: StationChoice) {
+    setToQuery(station.name);
+    setToError("");
+    destinationChosenThisSession.current = true;
+    onSelectTo(station);
+    if (stationsMatch(fromQuery, station.name)) {
       return;
     }
-
-    if (isViaPicker) {
-      return;
-    }
-
-    if (fromQuery.trim() && toQuery.trim()) {
-      if (stationsMatch(fromQuery, toQuery)) {
-        return;
-      }
+    if (fromQuery.trim()) {
       onDone();
+      return;
     }
+    focusField("from", false);
+  }
+
+  function confirmOriginReturn() {
+    const top = topSearchStation();
+    if (top) {
+      applyOriginFromReturn(top);
+      return;
+    }
+    if (!fromQuery.trim() || isSearching) {
+      setFromError(EMPTY_ORIGIN_ERROR);
+      return;
+    }
+    applyOriginFromReturn({ name: fromQuery.trim(), code: "" });
+  }
+
+  function confirmDestinationReturn() {
+    const top = topSearchStation();
+    if (top) {
+      applyDestinationFromReturn(top);
+      return;
+    }
+    if (!toQuery.trim() || isSearching) {
+      setToError(EMPTY_DESTINATION_ERROR);
+      return;
+    }
+    applyDestinationFromReturn({ name: toQuery.trim(), code: "" });
+  }
+
+  function confirmSearch() {
+    if (isViaPicker) {
+      const top = topSearchStation();
+      if (top) {
+        applyVia(top);
+      }
+      return;
+    }
+    if (focusedField === "from") {
+      confirmOriginReturn();
+      return;
+    }
+    confirmDestinationReturn();
   }
 
   function onSheetPointerDown(event: TouchEvent<HTMLElement>) {
@@ -621,10 +671,11 @@ export function StationPicker({
             </>
           ) : (
             <>
+          <div className="picker-field-block">
           <label
             className={`picker-field${
               focusedField === "from" ? " picker-field-focused" : ""
-            }`}
+            }${fromError ? " picker-field-error" : ""}`}
           >
             <div className="picker-field-icon">
               <div className="origin-pin">
@@ -643,6 +694,8 @@ export function StationPicker({
               autoComplete="off"
               autoCorrect="off"
               spellCheck={false}
+              aria-invalid={Boolean(fromError)}
+              aria-describedby={fromError ? "picker-origin-error" : undefined}
               onFocus={() => {
                 setFocusedField("from");
                 setIsEditing(false);
@@ -653,6 +706,12 @@ export function StationPicker({
               }}
               onClick={revealKeyboard}
               onChange={(event) => updateQuery("from", event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  confirmOriginReturn();
+                }
+              }}
             />
             {focusedField === "from" && fromQuery ? (
               <ClearButton
@@ -661,11 +720,21 @@ export function StationPicker({
               />
             ) : null}
           </label>
+          {fromError ? (
+            <p
+              className="picker-field-error-text"
+              id="picker-origin-error"
+              role="alert"
+            >
+              {fromError}
+            </p>
+          ) : null}
+          </div>
           <div className="picker-destination">
           <label
             className={`picker-field${
               focusedField === "to" ? " picker-field-focused" : ""
-            }${sameStationError ? " picker-field-error" : ""}`}
+            }${sameStationError || toError ? " picker-field-error" : ""}`}
           >
             <div className="picker-field-icon">
               <div className="destination-pin">
@@ -684,9 +753,13 @@ export function StationPicker({
               autoComplete="off"
               autoCorrect="off"
               spellCheck={false}
-              aria-invalid={sameStationError}
+              aria-invalid={sameStationError || Boolean(toError)}
               aria-describedby={
-                sameStationError ? "picker-same-station-error" : undefined
+                toError
+                  ? "picker-destination-error"
+                  : sameStationError
+                    ? "picker-same-station-error"
+                    : undefined
               }
               onFocus={() => {
                 setFocusedField("to");
@@ -698,6 +771,12 @@ export function StationPicker({
               }}
               onClick={revealKeyboard}
               onChange={(event) => updateQuery("to", event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  confirmDestinationReturn();
+                }
+              }}
             />
             {focusedField === "to" && toQuery ? (
               <ClearButton
@@ -706,7 +785,15 @@ export function StationPicker({
               />
             ) : null}
           </label>
-          {sameStationError ? (
+          {toError ? (
+            <p
+              className="picker-field-error-text"
+              id="picker-destination-error"
+              role="alert"
+            >
+              {toError}
+            </p>
+          ) : sameStationError ? (
             <p
               className="picker-field-error-text"
               id="picker-same-station-error"
